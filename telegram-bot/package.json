@@ -1,0 +1,11 @@
+{
+  "name": "telegram-bot",
+  "version": "1.0.0",
+  "dependencies": {
+    "bn.js": "^5.2.0",
+    "big.js": "^6.1.1",
+    "dotenv": "^10.0.0",
+    "near-api-js": "^0.44.1",
+    "node-telegram-bot-api": "^0.56.0"
+  }
+}
