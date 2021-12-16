@@ -1,4 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
+const {contractQuery} = require("./utils");
 const {getOrder} = require("./utils");
 const {CONTRACT, BOT_TOKEN} = require("./config");
 const {signURL, fromPrecision, formatOrderList} = require("./utils");
@@ -6,34 +7,56 @@ const {signURL, fromPrecision, formatOrderList} = require("./utils");
 
 const bot = new TelegramBot(BOT_TOKEN, {polling: true});
 
-const mockTokenList = [{sell_token: 'xabr.allbridge.testnet', sell_amount: '7000000000000000000000000', buy_token: 'xabr.allbridge.testnet', buy_amount: '53000000000000000000000000', order_id: '1'},
-    {sell_token: 'xabr.allbridge.testnet', sell_amount: '7000000000000000000000000', buy_token: 'xabr.allbridge.testnet', buy_amount: '53000000000000000000000000', order_id: '2'},
-    {sell_token: 'xabr.allbridge.testnet', sell_amount: '7000000000000000000000000', buy_token: 'xabr.allbridge.testnet', buy_amount: '53000000000000000000000000', order_id: '3'}]
-
-// Get order list
-bot.onText(/\/get_order_list$/, async (msg, match) => {
+// Get pairs
+bot.onText(/\/get_pairs$/, async (msg, match) => {
     const chatId = msg.chat.id;
 
-    // const result = await contractQuery(CONTRACT, "get_order_list",{});
-    const result = mockTokenList;
-    bot.sendMessage(chatId, await formatOrderList(result));
+    const result = await contractQuery(CONTRACT, "get_pairs",{});
+    bot.sendMessage(chatId, 'Pairs:', {
+        reply_markup: {
+            inline_keyboard: result.map(pair => ([{
+                text: pair,
+                callback_data: 'orders ' + pair
+            }]))
+        }
+    });
 });
+
+bot.on("callback_query", async function callback(callBackQuery) {
+    const chatId = callBackQuery.message.chat.id;
+    const [action, message] = callBackQuery.data.split(' ');
+    if (action === 'orders') {
+        const [sellToken, buyToken] = message.data.split('#');
+        const result = await contractQuery(CONTRACT, "get_orders", {sell_token: sellToken, buy_token: buyToken});
+        console.log(result);
+        bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
+    } else if (action === 'match') {
+        const orderId = message;
+        const order = await getOrder(orderId);
+        const url = await signURL(order.buy_token, 'ft_transfer_call', {
+            "receiver_id": CONTRACT,
+            "amount": order.buy_amount,
+            "msg": {order_id: orderId}
+        }, "1");
+        bot.sendMessage(chatId, `[Send transaction](${url})`, {parse_mode: 'MarkdownV2'});
+    }
+})
 
 
 // Get filtered order list
-bot.onText(/\/get_order_list ([a-z0-9._\-]+) ([a-z0-9._\-]+)/, async (msg, match) => {
+bot.onText(/\/get_orders_([a-z0-9._\-]+)#([a-z0-9._\-]+)/, async (msg, match) => {
     const chatId = msg.chat.id;
-
-    // const result = await contractQuery(CONTRACT, "get_order_list",{});
-    const result = mockTokenList;
-    bot.sendMessage(chatId, await formatOrderList(result));
+    const [sellToken, buyToken] = match.slice(1);
+    const result = await contractQuery(CONTRACT, "get_orders",{sell_token: sellToken, buy_token: buyToken});
+    console.log(result);
+    bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
 });
 
 
 // Create order
-bot.onText(/\/create_order sell (\d+) ([a-z0-9._\-]+) for  (\d+) ([a-z0-9._\-]+)/, async (msg, match) => {
+bot.onText(/\/create_order sell (\d+) ([a-z0-9._\-]+) for (\d+) ([a-z0-9._\-]+)/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const [_, sell_amount, sell_token, buy_amount, buy_token] = match;
+    const [sell_amount, sell_token, buy_amount, buy_token] = match.slice(1);
     const url = await signURL(sell_token, 'ft_transfer_call', {
         "receiver_id": CONTRACT,
         "amount": sell_amount,
