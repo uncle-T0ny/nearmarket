@@ -27,6 +27,7 @@ dependencies = [
 name = "archimarket"
 version = "0.0.1"
 dependencies = [
+ "hex",
  "near-contract-standards",
  "near-sdk",
 ]
