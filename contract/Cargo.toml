@@ -1,0 +1,12 @@
+[package]
+name = "archimarket"
+version = "0.0.1"
+authors = ["A. Romankov doit.rant@gmail.com"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "4.0.0-pre.2"
+near-contract-standards = "4.0.0-pre.2"
