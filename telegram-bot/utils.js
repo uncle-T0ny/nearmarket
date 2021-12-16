@@ -53,11 +53,18 @@ async function fromPrecision(value, tokenAddress) {
 }
 
 async function formatOrderList(orderList) {
-    let text = '';
+    const inline_keyboard = [];
     for (const {sell_amount, sell_token, buy_amount, buy_token, order_id} of orderList) {
-        text += `Sell ${await toPrecision(sell_amount, sell_token)} ${sell_token} for ${await toPrecision(buy_amount, buy_token)} ${buy_token} /match_${order_id}\n`
+        inline_keyboard.push([{
+            text: `Sell ${await toPrecision(sell_amount, sell_token)} ${sell_token} for ${await toPrecision(buy_amount, buy_token)} ${buy_token}`,
+            switch_inline_query_current_chat: `match ${order_id}`,
+        }]);
     }
-    return text
+    return {
+        reply_markup: {
+            inline_keyboard
+        }
+    }
 }
 
 module.exports = {
