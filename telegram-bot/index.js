@@ -73,7 +73,7 @@ bot.on("callback_query", async function callback(callBackQuery) {
 //
 
 // Create order
-bot.onText(/\/sell (\d+) ([a-z0-9._\-]+) for (\d+) ([a-z0-9._\-]+)/, async (msg, match) => {
+bot.onText(/\/sell ([\d\.]+) ([a-z0-9._\-]+) for ([\d\.]+) ([a-z0-9._\-]+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const [sell_amount, sell_token, buy_amount, buy_token] = match.slice(1);
     await sendTransaction(chatId, sell_token, 'ft_transfer_call', {
