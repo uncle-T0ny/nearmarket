@@ -90,7 +90,7 @@ async function formatOrderList(orderList) {
     }, order_id
 } of orderList) {
         inline_keyboard.push([{
-            text: `Sell ${await toPrecision(sell_amount, sell_token)} ${await getTokenSymbol(sell_token)}` +
+            text: `Buy ${await toPrecision(sell_amount, sell_token)} ${await getTokenSymbol(sell_token)}` +
                 ` for ${await toPrecision(buy_amount, buy_token)} ${await getTokenSymbol(buy_token)}`,
             callback_data: `match ${order_id}`,
         }]);
@@ -123,7 +123,7 @@ async function pairToString(pair) {
     const [sell, buy] = pair.split('#');
     const sellSymbol = await getTokenSymbol(sell);
     const buySymbol = await getTokenSymbol(buy);
-    return `${sellSymbol} -> ${buySymbol}`;
+    return `${buySymbol} -> ${sellSymbol}`;
 }
 
 async function needToDeposit(contract, account) {

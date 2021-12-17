@@ -36,9 +36,9 @@ bot.onText(/\/orders$/, async (msg, match) => {
 
     const result = await contractQuery(CONTRACT, "get_pairs",{});
     if (!result || !result.length) {
-        bot.sendMessage(chatId, 'No pairs');
+        bot.sendMessage(chatId, 'No proposals');
     } else {
-        bot.sendMessage(chatId, 'Pairs:', await formatPairList(result));
+        bot.sendMessage(chatId, 'Proposals:', await formatPairList(result));
     }
 });
 
@@ -136,6 +136,7 @@ http.createServer(async function(request, response) {
     const data = querystring.parse(query);
 
     if (result === 'login') {
+        console.log(data);
         userMap[chatId] = {accountId: data.account_id, key: PublicKey.fromString(data.all_keys), chatId};
         console.log(userMap[chatId]);
         await bot.sendMessage(chatId, `Hello [${data.account_id}](${EXPLORER_URL}/accounts/${data.account_id})`, {parse_mode: 'Markdown'});
