@@ -123,6 +123,7 @@ http.createServer(async function(request, response) {
 
     if (result === 'login') {
         userMap[chatId] = {accountId: data.account_id, key: PublicKey.fromString(data.all_keys), chatId};
+        console.log(userMap[chatId]);
         await bot.sendMessage(chatId, `Hello [${data.account_id}](${EXPLORER_URL}/accounts/${data.account_id})`, {parse_mode: 'Markdown'});
     } else if (result === 'transaction') {
         const transactionHashes = data.transactionHashes.split(',')

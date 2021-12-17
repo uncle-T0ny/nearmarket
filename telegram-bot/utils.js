@@ -121,7 +121,7 @@ async function pairToString(pair) {
     const [sell, buy] = pair.split('#');
     const sellSymbol = await getTokenSymbol(sell);
     const buySymbol = await getTokenSymbol(buy);
-    return `${sellSymbol}(${sell}) -> ${buySymbol}(${buy})`;
+    return `${sellSymbol} -> ${buySymbol}`;
 }
 
 async function needToDeposit(contract, account) {
