@@ -20,7 +20,7 @@ async function getUser(chatId) {
 async function sendTransaction(chatId, contract, method, args= {}, depositAddresses = [], deposit = '1') {
     const user = await getUser(chatId);
     const url = await signURL(user, contract, method, args, depositAddresses, deposit)
-    await bot.sendMessage(chatId, `[Send transaction](${url})`, {parse_mode: 'MarkdownV2'});
+    await bot.sendMessage(chatId, `[Click to send transaction](${url})`, {parse_mode: 'MarkdownV2'});
 }
 
 
@@ -31,12 +31,15 @@ bot.onText(/\/login$/, async (msg, match) => {
 });
 
 // Get pairs
-bot.onText(/\/list$/, async (msg, match) => {
+bot.onText(/\/orders$/, async (msg, match) => {
     const chatId = msg.chat.id;
 
     const result = await contractQuery(CONTRACT, "get_pairs",{});
-    console.log(result);
-    bot.sendMessage(chatId, 'Pairs:', await formatPairList(result));
+    if (!result || !result.length) {
+        bot.sendMessage(chatId, 'No pairs');
+    } else {
+        bot.sendMessage(chatId, 'Pairs:', await formatPairList(result));
+    }
 });
 
 bot.on("callback_query", async function callback(callBackQuery) {
@@ -46,8 +49,11 @@ bot.on("callback_query", async function callback(callBackQuery) {
         const pair = getPair(message);
         const [sellToken, buyToken] = pair.split('#');
         const result = await contractQuery(CONTRACT, "get_orders", {sell_token: sellToken, buy_token: buyToken});
-        console.log(result);
-        bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
+        if (!result || !result.length) {
+            bot.sendMessage(chatId, 'No orders');
+        } else {
+            bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
+        }
     } else if (action === 'match') {
         const order_id = message;
         const order = await getOrder(order_id);
@@ -89,6 +95,11 @@ bot.onText(/\/sell ([\d\.]+) ([a-z0-9._\-]+) for ([\d\.]+) ([a-z0-9._\-]+)/, asy
             sell_amount: await fromPrecision(sell_amount, sell_token),
         })
     }, [{depositContract: sell_token, depositAddress: CONTRACT}]);
+});
+
+bot.onText(/\/sell$/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "\/sell [sell_amount] [sell_token_address] for [buy_amount] [buy_token_address]");
 });
 
 // Match order
