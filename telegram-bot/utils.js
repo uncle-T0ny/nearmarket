@@ -1,10 +1,9 @@
 const nearApi = require('near-api-js');
 const Big = require("big.js");
 const {SERVER_URL} = require("./config");
-const {CALLBACK_URL, NETWORK, CONTRACT, PROVIDER} = require("./config");
+const {NETWORK, CONTRACT, PROVIDER} = require("./config");
+const crypto = require('crypto');
 const tokenMap = {};
-
-const FT_STORAGE_DEPOSIT = '2350000000000000000000';
 
 async function signURL (user, contract, method, args={}, depositAddresses = [], attachedDeposit='1', gas=300000000000000, meta) {
     const deposit  	= typeof attachedDeposit =='string'?attachedDeposit:nearApi.utils.format.parseNearAmount(''+attachedDeposit)
@@ -16,10 +15,11 @@ async function signURL (user, contract, method, args={}, depositAddresses = [], 
     let nonce = 1;
     for (const {depositContract, depositAddress} of depositAddresses) {
         if (await needToDeposit(depositContract, depositAddress)) {
+            const depositAmount = await getDepostiAmount(depositContract);
             const depositActions = [nearApi.transactions.functionCall('storage_deposit', Buffer.from(JSON.stringify({
                 registration_only: true,
                 account_id: depositAddress
-            })), gas, FT_STORAGE_DEPOSIT)];
+            })), gas, depositAmount)];
             txs.push(nearApi.transactions.createTransaction(user.accountId, user.key, depositContract, nonce++, depositActions, nearApi.utils.serialize.base_decode(block.header.hash)))
         }
     }
@@ -89,7 +89,7 @@ async function formatOrderList(orderList) {
     }, order_id
 } of orderList) {
         inline_keyboard.push([{
-            text: `Sell ${await toPrecision(sell_amount, sell_token)} ${await getTokenSymbol(sell_token)}` +
+            text: `Buy ${await toPrecision(sell_amount, sell_token)} ${await getTokenSymbol(sell_token)}` +
                 ` for ${await toPrecision(buy_amount, buy_token)} ${await getTokenSymbol(buy_token)}`,
             callback_data: `match ${order_id}`,
         }]);
@@ -104,10 +104,11 @@ async function formatOrderList(orderList) {
 async function formatPairList(pairs) {
     const inline_keyboard = [];
     for (const pair of pairs) {
+        const hash = setPairMap(pair);
         const text = await pairToString(pair);
         inline_keyboard.push([{
             text,
-            callback_data: 'orders ' + pair,
+            callback_data: 'orders ' + hash,
         }]);
     }
     return {
@@ -121,12 +122,29 @@ async function pairToString(pair) {
     const [sell, buy] = pair.split('#');
     const sellSymbol = await getTokenSymbol(sell);
     const buySymbol = await getTokenSymbol(buy);
-    return `${sellSymbol}(${sell}) -> ${buySymbol}(${buy})`;
+    return `${buySymbol} -> ${sellSymbol}`;
 }
 
 async function needToDeposit(contract, account) {
     const balance = await contractQuery(contract, 'storage_balance_of', {account_id: account});
     return !balance;
+}
+
+async function getDepostiAmount(contract) {
+    const result = await contractQuery(contract, 'storage_balance_bounds', {});
+    return result.min;
+}
+
+const pairMap = {};
+
+function setPairMap(pair) {
+    const hash = crypto.createHash('md5').update(pair).digest('hex');
+    pairMap[hash] = pair
+    return hash;
+}
+
+function getPair(hash) {
+    return pairMap[hash];
 }
 
 module.exports = {
@@ -139,5 +157,7 @@ module.exports = {
     formatOrderList,
     loginUrl,
     getTokenSymbol,
-    formatPairList
+    formatPairList,
+    setPairMap,
+    getPair
 }
