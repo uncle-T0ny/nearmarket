@@ -4,11 +4,13 @@ const {SERVER_URL} = require("./config");
 const {CALLBACK_URL, NETWORK, CONTRACT, PROVIDER} = require("./config");
 const tokenMap = {};
 
+const FT_STORAGE_DEPOSIT = '2350000000000000000000';
+
 async function signURL (user, contract, method, args={}, depositAddresses = [], attachedDeposit='1', gas=300000000000000, meta) {
     const deposit  	= typeof attachedDeposit =='string'?attachedDeposit:nearApi.utils.format.parseNearAmount(''+attachedDeposit)
     const actions = []
     actions.push(method === '!transfer'? nearApi.transactions.transfer(deposit) : nearApi.transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit));
-    const block 	= await PROVIDER.block({finality:'final'})
+    const block = await PROVIDER.block({finality:'final'})
 
     const txs = [];
     let nonce = 1;
@@ -17,21 +19,21 @@ async function signURL (user, contract, method, args={}, depositAddresses = [], 
             const depositActions = [nearApi.transactions.functionCall('storage_deposit', Buffer.from(JSON.stringify({
                 registration_only: true,
                 account_id: depositAddress
-            })), gas, deposit)];
+            })), gas, FT_STORAGE_DEPOSIT)];
             txs.push(nearApi.transactions.createTransaction(user.accountId, user.key, depositContract, nonce++, depositActions, nearApi.utils.serialize.base_decode(block.header.hash)))
         }
     }
     txs.push(nearApi.transactions.createTransaction(user.accountId, user.key, contract, nonce, actions, nearApi.utils.serialize.base_decode(block.header.hash)))
     const newUrl 	= new URL('sign',`https://wallet.${NETWORK}.near.org/`);
     newUrl.searchParams.set('transactions', txs.map(transaction => nearApi.utils.serialize.serialize(nearApi.transactions.SCHEMA, transaction)).map(serialized => Buffer.from(serialized).toString('base64')).join(','))
-    newUrl.searchParams.set('callbackUrl', CALLBACK_URL)
+    newUrl.searchParams.set('callbackUrl', `${SERVER_URL}/${user.chatId}/transaction`)
     if (meta) newUrl.searchParams.set('meta', meta)
     return newUrl.href
 }
 
 function loginUrl(chatId) {
     const newUrl 	= new URL('login',`https://wallet.${NETWORK}.near.org`);
-    newUrl.searchParams.set('success_url', `${SERVER_URL}/${chatId}/success`);
+    newUrl.searchParams.set('success_url', `${SERVER_URL}/${chatId}/login`);
     newUrl.searchParams.set('failure_url', `${SERVER_URL}/${chatId}/fail`);
     return newUrl.href
 }

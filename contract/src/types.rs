@@ -46,14 +46,14 @@ pub struct NewOrderAction {
 //     pub order_id: U64,
 //     pub order_action: OrderActions,
 // }
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct OrderView {
     pub order: Order,
     pub order_id: U64,
 }
 
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Order {
     pub maker: AccountId,
