@@ -6,7 +6,6 @@ use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
 use near_sdk::borsh;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, TreeMap, UnorderedMap};
-use near_sdk::is_promise_success;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
 use near_sdk::near_bindgen;
@@ -136,8 +135,8 @@ impl Market {
             FT_TRANSFER_TGAS,
         )
         .then(ext_self::callback_on_send_tokens_to_maker(
-            sender_id,
-            order.sell_amount,
+            sender_id, // matcher 
+            self.take_one_percent_fee(order.sell_amount.0),
             order.sell_token.clone(),
             order.buy_token.clone(),
             U64(order_id),
@@ -147,6 +146,10 @@ impl Market {
         ));
     }
 
+    fn take_one_percent_fee(&self, amount: u128) -> U128 {
+        U128(amount * 99 / 100)
+    }
+    
     #[private]
     pub fn callback_on_send_tokens_to_maker(
         &mut self,
@@ -197,7 +200,7 @@ impl Market {
 
         let key = compose_key(&new_order.sell_token, &new_order.buy_token);
         let mut orders_map = self.orders.get(&key)
-            .unwrap_or(TreeMap::new(StorageKey::MapByOrderId));
+            .unwrap_or(TreeMap::new(key.as_bytes()));
 
         let order_id = new_order.get_id();
         if orders_map.contains_key(&order_id) {
@@ -225,12 +228,22 @@ impl Market {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
         }
 
-        let maker = order.unwrap().maker;
+        let order = order.unwrap();
+        let maker = order.maker;
         if maker != env::predecessor_account_id() {
             env::panic_str(ERR04_PERMISSION_DENIED)
         }
 
         self.internal_remove_order(&key, orders_map, order_id.0);
+
+        ft_token::ft_transfer(
+            maker,
+            order.sell_amount,
+            "".to_string(),
+            order.sell_token.clone(),
+            ONE_YOCTO,
+            FT_TRANSFER_TGAS,
+        );
     }
 
     fn internal_remove_order(
@@ -269,10 +282,9 @@ impl Market {
         let mut res = vec![];
 
         let orders = order_by_key.unwrap();
+        println!("orders.contains_key: {}", orders.contains_key(&6459152053938679878));
         let order_iter = orders.iter().take(5);
         for order in order_iter {
-            env::log_str(&format!("order: {:?}", order.1));
-            env::log_str(&format!("order id: {}", order.0));
             res.push(OrderView {
                 order: order.1.clone(),
                 order_id: U64(order.0),
@@ -302,31 +314,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_fee() {
+        let contract = Market {
+            orders: UnorderedMap::new(StorageKey::Orders),
+            order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
+            version: 1,
+        };
+
+        assert_eq!(contract.take_one_percent_fee(100), U128(99));
+        assert_eq!(contract.take_one_percent_fee(23200), U128(22968));
+        assert_eq!(contract.take_one_percent_fee(1111111), U128(1099999));
+        assert_eq!(contract.take_one_percent_fee(1000000000000000000000000000), U128(990000000000000000000000000));
+    }
+
+    #[test]
     fn test_order_hash() {
         let order = Order {
             maker: AccountId::new_unchecked(String::from("maker.near")),
-            sell_token: AccountId::new_unchecked(String::from("token2.near")),
-            sell_amount: U128(20),
-            buy_token: AccountId::new_unchecked(String::from("token1.near")),
-            buy_amount: U128(300),
+            sell_token: AccountId::new_unchecked(String::from("xabr.allbridge.testnet")),
+            sell_amount: U128(1000000000000000000000000),
+            buy_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
+            buy_amount: U128(1000000000000000000000000),
         };
 
         let order1 = Order {
             maker: AccountId::new_unchecked(String::from("maker.near")),
-            sell_token: AccountId::new_unchecked(String::from("token2.near")),
-            sell_amount: U128(20),
-            buy_token: AccountId::new_unchecked(String::from("token1.near")),
-            buy_amount: U128(300),
+            sell_token: AccountId::new_unchecked(String::from("xabr.allbridge.testnet")),
+            sell_amount: U128(1000000000000000000000000),
+            buy_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
+            buy_amount: U128(1000000000000000000000000),
         };
 
         assert_eq!(order.get_id(), order1.get_id());
 
         let order2 = Order {
             maker: AccountId::new_unchecked(String::from("maker.near")),
-            sell_token: AccountId::new_unchecked(String::from("token2.near")),
-            sell_amount: U128(1000), // param changed
-            buy_token: AccountId::new_unchecked(String::from("token1.near")),
-            buy_amount: U128(300),
+            sell_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
+            sell_amount: U128(1000000000000000000000000), // param changed
+            buy_token: AccountId::new_unchecked(String::from("xbr.allbridge.testnet")),
+            buy_amount: U128(1000000000000000000000000),
         };
 
         assert_ne!(order.get_id(), order2.get_id());
@@ -370,7 +396,6 @@ mod tests {
             AccountId::new_unchecked(String::from("aromankov.testnet")),
         );
 
-
         // check get pairs
         assert!(contract.get_pairs().len() != 0);
 
@@ -381,7 +406,7 @@ mod tests {
                 new_order_action_1.buy_token.clone(),
             )
             .unwrap();
-        assert!(orders_1.len() != 0);
+        assert!(orders_1.len() == 1);
 
         let orders_2 = contract
             .get_orders(
@@ -389,8 +414,7 @@ mod tests {
                 new_order_action_2.buy_token.clone(),
             )
             .unwrap();
-        assert!(orders_2.len() != 0);
-
+        assert!(orders_2.len() == 1);
 
         let order_2 = orders_2.get(0).unwrap();
         let order_id_2 = order_2.order_id.0;
@@ -407,6 +431,7 @@ mod tests {
 
         let order_1 = orders_1.get(0).unwrap();
         let order_id_1 = order_1.order_id.0;
+
         assert_eq!(*order_1, OrderView {
             order: Order {
                 buy_amount: new_order_action_1.buy_amount.clone(),
@@ -419,13 +444,18 @@ mod tests {
         });
 
         // check remove order
-        println!("order id: {}", order_id_1);
         assert!(contract.get_order(U64(order_id_1)).is_some());
 
         contract.remove_order(
             new_order_action_1.sell_token.clone(),
             new_order_action_1.buy_token.clone(),
             U64(order_id_1),
+        );
+
+        contract.remove_order(
+            new_order_action_2.sell_token.clone(),
+            new_order_action_2.buy_token.clone(),
+            U64(order_id_2),
         );
 
         assert!(contract.get_pairs().len() == 0);
