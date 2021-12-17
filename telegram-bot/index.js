@@ -1,16 +1,11 @@
 const TelegramBot = require('node-telegram-bot-api');
-const {loginUrl} = require("./utils");
-const {contractQuery} = require("./utils");
-const {getOrder} = require("./utils");
-const {CONTRACT, BOT_TOKEN} = require("./config");
-const {signURL, fromPrecision, formatOrderList} = require("./utils");
+const {CONTRACT, BOT_TOKEN, EXPLORER_URL, CALLBACK_URL, PORT} = require("./config");
+const {signURL, fromPrecision, formatOrderList, contractQuery, getOrder, loginUrl, formatPairList} = require("./utils");
 const querystring = require('querystring');
+const http = require("http");
+const {PublicKey} = require("near-api-js/lib/utils");
 
 const bot = new TelegramBot(BOT_TOKEN, {polling: true});
-const http = require("http");
-const {formatPairList} = require("./utils");
-const {PublicKey} = require("near-api-js/lib/utils");
-const {CALLBACK_URL} = require("./config");
 
 async function getUser(chatId) {
     const user = userMap[chatId];
@@ -21,9 +16,9 @@ async function getUser(chatId) {
     return user;
 }
 
-async function sendTransaction(chatId, contract, method, args= {}, depositAddresses = []) {
+async function sendTransaction(chatId, contract, method, args= {}, depositAddresses = [], deposit = '1') {
     const user = await getUser(chatId);
-    const url = await signURL(user, contract, method, args, depositAddresses)
+    const url = await signURL(user, contract, method, args, depositAddresses, deposit)
     await bot.sendMessage(chatId, `[Send transaction](${url})`, {parse_mode: 'MarkdownV2'});
 }
 
@@ -48,6 +43,7 @@ bot.on("callback_query", async function callback(callBackQuery) {
     if (action === 'orders') {
         const [sellToken, buyToken] = message.split('#');
         const result = await contractQuery(CONTRACT, "get_orders", {sell_token: sellToken, buy_token: buyToken});
+        console.log(result);
         bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
     } else if (action === 'match') {
         const order_id = message;
@@ -61,20 +57,20 @@ bot.on("callback_query", async function callback(callBackQuery) {
         }, [
             {depositContract: buy_token, depositAddress: CONTRACT},
             {depositContract: order.sell_token, depositAddress: user.accountId},
-            {depositContract: order.sell_token, depositAddress: order.maker}]);
+            {depositContract: order.buy_token, depositAddress: order.maker}]);
     }
 })
 
 
-// Get filtered order list
-bot.onText(/\/get_orders_([a-z0-9._\-]+)#([a-z0-9._\-]+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const [sellToken, buyToken] = match.slice(1);
-    const result = await contractQuery(CONTRACT, "get_orders",{sell_token: sellToken, buy_token: buyToken});
-    console.log(result);
-    bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
-});
-
+// // Get filtered order list
+// bot.onText(/\/get_orders_([a-z0-9._\-]+)#([a-z0-9._\-]+)/, async (msg, match) => {
+//     const chatId = msg.chat.id;
+//     const [sellToken, buyToken] = match.slice(1);
+//     const result = await contractQuery(CONTRACT, "get_orders",{sell_token: sellToken, buy_token: buyToken});
+//     console.log(result);
+//     bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
+// });
+//
 
 // Create order
 bot.onText(/\/sell (\d+) ([a-z0-9._\-]+) for (\d+) ([a-z0-9._\-]+)/, async (msg, match) => {
@@ -93,44 +89,52 @@ bot.onText(/\/sell (\d+) ([a-z0-9._\-]+) for (\d+) ([a-z0-9._\-]+)/, async (msg,
 });
 
 // Match order
-bot.onText(/\/match_(\d+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const orderId = match[1];
-    const order = await getOrder(orderId);
-    await sendTransaction(chatId, order.buy_token, 'ft_transfer_call', {
-        "receiver_id": CONTRACT,
-        "amount": order.buy_amount,
-        "msg": {order_id: orderId}
-    });
-});
+// bot.onText(/\/match_(\d+)/, async (msg, match) => {
+//     const chatId = msg.chat.id;
+//     const orderId = match[1];
+//     const order = await getOrder(orderId);
+//     await sendTransaction(chatId, order.buy_token, 'ft_transfer_call', {
+//         "receiver_id": CONTRACT,
+//         "amount": order.buy_amount,
+//         "msg": {order_id: orderId}
+//     });
+// });
 
 
 // Cancel order
 bot.onText(/\/cancel (\d+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const orderId = match[1];
+    const order = await getOrder(orderId);
 
-    await sendTransaction(chatId, CONTRACT, 'cancel_order', {
-        "order_id": orderId,
-    });
+    await sendTransaction(chatId, CONTRACT, 'remove_order', {
+        sell_token: order.sell_token,
+        buy_token: order.buy_token,
+        order_id: orderId,
+    }, [{depositContract: order.sell_token, depositAddress: order.maker}], '0');
 });
 
 const userMap = {};
 
-http.createServer(function(request, response) {
+http.createServer(async function(request, response) {
     const [path, query] = request.url.split('?');
     const [_, chatId, result] = path.split('/');
     const data = querystring.parse(query);
 
-    if (result === 'success') {
-        userMap[chatId] = {accountId: data.account_id, key: PublicKey.fromString(data.all_keys)};
-        bot.sendMessage(chatId, `Hello ${data.account_id}`);
+    if (result === 'login') {
+        userMap[chatId] = {accountId: data.account_id, key: PublicKey.fromString(data.all_keys), chatId};
+        await bot.sendMessage(chatId, `Hello [${data.account_id}](${EXPLORER_URL}/accounts/${data.account_id})`, {parse_mode: 'Markdown'});
+    } else if (result === 'transaction') {
+        const transactionHashes = data.transactionHashes.split(',')
+        for(const hash of transactionHashes) {
+            await bot.sendMessage(chatId, `Success [${hash}](${EXPLORER_URL}/transactions/${hash})`, {parse_mode: 'Markdown'});
+        }
     } else {
-        bot.sendMessage(chatId, `Something went wrong`);
+        await bot.sendMessage(chatId, `Something went wrong`);
     }
 
     response.writeHead(302, {
         'Location': CALLBACK_URL
     });
     response.end();
-}).listen(3000);
+}).listen(PORT);
