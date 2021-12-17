@@ -1,6 +1,5 @@
 use near_sdk::ext_contract;
-use near_sdk::json_types::U128;
-
+use near_sdk::json_types::{U128, U64};
 
 #[ext_contract(ft_token)]
 pub trait FtToken {
@@ -16,5 +15,12 @@ pub trait FtToken {
 
 #[ext_contract(ext_self)]
 pub trait ExtSelf {
-    
+    fn callback_on_send_tokens_to_maker(
+        &self,
+        sender_id: AccountId,
+        sell_amount: U128,
+        sell_token: AccountId,
+        buy_token: AccountId,
+        order_id: U64,
+    );
 }

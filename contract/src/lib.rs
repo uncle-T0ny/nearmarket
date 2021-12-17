@@ -6,14 +6,15 @@ use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
 use near_sdk::borsh;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, TreeMap, UnorderedMap};
+use near_sdk::is_promise_success;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
 use near_sdk::near_bindgen;
 use near_sdk::serde_json;
-use near_sdk::serde_json::Error;
 use near_sdk::BorshStorageKey;
 use near_sdk::Gas;
 use near_sdk::PanicOnDefault;
+use near_sdk::PromiseResult;
 use near_sdk::{env, AccountId, PromiseOrValue};
 
 mod errors;
@@ -22,6 +23,7 @@ mod types;
 
 pub const ONE_YOCTO: u128 = 1;
 pub const FT_TRANSFER_TGAS: Gas = Gas(50_000_000_000_000);
+pub const RESERVE_TGAS: Gas = Gas(15_000_000_000_000);
 
 #[derive(BorshSerialize, BorshStorageKey)]
 pub enum StorageKey {
@@ -101,42 +103,93 @@ impl Market {
     }
 
     fn match_order(&mut self, sender_id: AccountId, order_id: u64, amount: U128, token: AccountId) {
-        env::log_str(&format!("match_order: {}, {:?}, {}", order_id, amount, token));
+        env::log_str(&format!(
+            "match_order: {}, {:?}, {}",
+            order_id, amount, token
+        ));
         let existed_order = self.order_id_to_order.get(&order_id);
         if existed_order.is_none() {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
         }
-        let existed_order = existed_order.unwrap();
-       
-        if amount != existed_order.buy_amount {
+
+        let order = existed_order.unwrap();
+
+        if amount != order.buy_amount {
             env::panic_str(ERR05_NOT_VALID_AMOUNT);
         }
 
-        if token != existed_order.buy_token {
+        if token != order.buy_token {
             env::panic_str(ERR06_NOT_VALID_TOKEN);
         }
 
-        // todo: check storage deposit
-        // complete order
-        ft_token::ft_transfer( // todo add callback and check that tokens transfered before removing 
+        // todo:  check storage deposit
+
+        let gas_for_next_callback =
+            env::prepaid_gas() - env::used_gas() - FT_TRANSFER_TGAS - RESERVE_TGAS;
+
+        ft_token::ft_transfer(
+            order.maker,
+            order.buy_amount,
+            "".to_string(),
+            order.buy_token.clone(),
+            ONE_YOCTO,
+            FT_TRANSFER_TGAS,
+        )
+        .then(ext_self::callback_on_send_tokens_to_maker(
             sender_id,
-            existed_order.sell_amount,
-            "".to_string(),
-            existed_order.sell_token.clone(),
-            ONE_YOCTO,
-            FT_TRANSFER_TGAS,
-        );
+            order.sell_amount,
+            order.sell_token.clone(),
+            order.buy_token.clone(),
+            U64(order_id),
+            env::current_account_id(),
+            0,
+            gas_for_next_callback,
+        ));
+    }
 
-        ft_token::ft_transfer( // todo add callback and check that tokens transfered before removing 
-            existed_order.maker,
-            existed_order.buy_amount,
-            "".to_string(),
-            existed_order.buy_token.clone(),
-            ONE_YOCTO,
-            FT_TRANSFER_TGAS,
+    #[private]
+    pub fn callback_on_send_tokens_to_maker(
+        &mut self,
+        sender_id: AccountId,
+        sell_amount: U128,
+        sell_token: AccountId,
+        buy_token: AccountId,
+        order_id: U64,
+    ) {
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "{}",
+            ERR08_NOT_CORRECT_PROMISE_RESULT_COUNT
         );
+        let is_promise_success: bool = match env::promise_result(0) {
+            PromiseResult::NotReady => unreachable!(),
+            PromiseResult::Successful(_) => true,
+            PromiseResult::Failed => false,
+        };
 
-        self.remove_order(existed_order.sell_token, existed_order.buy_token, order_id);
+        if is_promise_success {
+            // check storage deposit
+            ft_token::ft_transfer(
+                // todo add callback and check that tokens transfered before removing
+                sender_id,
+                sell_amount,
+                "".to_string(),
+                sell_token.clone(),
+                ONE_YOCTO,
+                FT_TRANSFER_TGAS,
+            ); // todo, we need to check result, but what to do in case of fail? 
+
+            let key = compose_key(&sell_token, &buy_token);
+            let orders_map = self
+                .orders
+                .get(&key)
+                .unwrap_or_else(|| env::panic_str(ERR01_INTERNAL));
+            self.internal_remove_order(&key, orders_map, order_id.0);
+        } else {
+            // for example maker did not registred buy_token
+            env::panic_str(ERR01_INTERNAL);
+        } 
     }
 
     fn add_order(&mut self, action: NewOrderAction, sender: AccountId) {
@@ -170,31 +223,40 @@ impl Market {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
         }
 
-        let mut orders_map = order_by_key.unwrap();
+        let orders_map = order_by_key.unwrap();
         let order = orders_map.get(&order_id);
 
         if order.is_none() {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
         }
 
-        // let maker = order.unwrap().maker; // create internal remove 
-        // if maker != env::predecessor_account_id() {
-        //     env::panic_str(ERR04_PERMISSION_DENIED)
-        // }
+        let maker = order.unwrap().maker;
+        if maker != env::predecessor_account_id() {
+            env::panic_str(ERR04_PERMISSION_DENIED)
+        }
 
+        self.internal_remove_order(&key, orders_map, order_id);
+    }
+
+    fn internal_remove_order(
+        &mut self,
+        key: &String,
+        mut orders_map: TreeMap<u64, Order>,
+        order_id: u64,
+    ) {
         orders_map.remove(&order_id);
 
         if orders_map.len() == 0 {
-            self.orders.remove(&key);
+            self.orders.remove(key);
         } else {
-            self.orders.insert(&key, &orders_map);
+            self.orders.insert(key, &orders_map);
         }
 
         self.order_id_to_order.remove(&order_id);
     }
 
     pub fn get_order(&self, order_id: U64) -> Option<Order> {
-        self.order_id_to_order.get(&order_id.0)    
+        self.order_id_to_order.get(&order_id.0)
     }
 
     pub fn get_orders(
