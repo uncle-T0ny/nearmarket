@@ -2,6 +2,7 @@ const nearApi = require('near-api-js');
 const Big = require("big.js");
 const {SERVER_URL} = require("./config");
 const {CALLBACK_URL, NETWORK, CONTRACT, PROVIDER} = require("./config");
+const crypto = require('crypto');
 const tokenMap = {};
 
 const FT_STORAGE_DEPOSIT = '2350000000000000000000';
@@ -104,10 +105,11 @@ async function formatOrderList(orderList) {
 async function formatPairList(pairs) {
     const inline_keyboard = [];
     for (const pair of pairs) {
+        const hash = setPairMap(pair);
         const text = await pairToString(pair);
         inline_keyboard.push([{
             text,
-            callback_data: 'orders ' + pair,
+            callback_data: 'orders ' + hash,
         }]);
     }
     return {
@@ -118,15 +120,27 @@ async function formatPairList(pairs) {
 }
 
 async function pairToString(pair) {
-    // const [sell, buy] = pair.split('#');
-    // const sellSymbol = await getTokenSymbol(sell);
-    // const buySymbol = await getTokenSymbol(buy);
-    return `Test`;
+    const [sell, buy] = pair.split('#');
+    const sellSymbol = await getTokenSymbol(sell);
+    const buySymbol = await getTokenSymbol(buy);
+    return `${sellSymbol} -> ${buySymbol}`;
 }
 
 async function needToDeposit(contract, account) {
     const balance = await contractQuery(contract, 'storage_balance_of', {account_id: account});
     return !balance;
+}
+
+const pairMap = {};
+
+function setPairMap(pair) {
+    const hash = crypto.createHash('md5').update(pair).digest('hex');
+    pairMap[hash] = pair
+    return hash;
+}
+
+function getPair(hash) {
+    return pairMap[hash];
 }
 
 module.exports = {
@@ -139,5 +153,7 @@ module.exports = {
     formatOrderList,
     loginUrl,
     getTokenSymbol,
-    formatPairList
+    formatPairList,
+    setPairMap,
+    getPair
 }

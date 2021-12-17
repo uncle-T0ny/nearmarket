@@ -3,6 +3,7 @@ const {CONTRACT, BOT_TOKEN, EXPLORER_URL, CALLBACK_URL, PORT} = require("./confi
 const {signURL, fromPrecision, formatOrderList, contractQuery, getOrder, loginUrl, formatPairList} = require("./utils");
 const querystring = require('querystring');
 const http = require("http");
+const {getPair} = require("./utils");
 const {PublicKey} = require("near-api-js/lib/utils");
 
 const bot = new TelegramBot(BOT_TOKEN, {polling: true});
@@ -34,6 +35,7 @@ bot.onText(/\/list$/, async (msg, match) => {
     const chatId = msg.chat.id;
 
     const result = await contractQuery(CONTRACT, "get_pairs",{});
+    console.log(result);
     bot.sendMessage(chatId, 'Pairs:', await formatPairList(result));
 });
 
@@ -41,7 +43,8 @@ bot.on("callback_query", async function callback(callBackQuery) {
     const chatId = callBackQuery.message.chat.id;
     const [action, message] = callBackQuery.data.split(' ');
     if (action === 'orders') {
-        const [sellToken, buyToken] = message.split('#');
+        const pair = getPair(message);
+        const [sellToken, buyToken] = pair.split('#');
         const result = await contractQuery(CONTRACT, "get_orders", {sell_token: sellToken, buy_token: buyToken});
         console.log(result);
         bot.sendMessage(chatId, 'Orders:', await formatOrderList(result));
