@@ -118,10 +118,10 @@ async function formatPairList(pairs) {
 }
 
 async function pairToString(pair) {
-    const [sell, buy] = pair.split('#');
-    const sellSymbol = await getTokenSymbol(sell);
-    const buySymbol = await getTokenSymbol(buy);
-    return `${sellSymbol} -> ${buySymbol}`;
+    // const [sell, buy] = pair.split('#');
+    // const sellSymbol = await getTokenSymbol(sell);
+    // const buySymbol = await getTokenSymbol(buy);
+    return `Test`;
 }
 
 async function needToDeposit(contract, account) {
