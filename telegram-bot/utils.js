@@ -1,11 +1,9 @@
 const nearApi = require('near-api-js');
 const Big = require("big.js");
 const {SERVER_URL} = require("./config");
-const {CALLBACK_URL, NETWORK, CONTRACT, PROVIDER} = require("./config");
+const {NETWORK, CONTRACT, PROVIDER} = require("./config");
 const crypto = require('crypto');
 const tokenMap = {};
-
-const FT_STORAGE_DEPOSIT = '2350000000000000000000';
 
 async function signURL (user, contract, method, args={}, depositAddresses = [], attachedDeposit='1', gas=300000000000000, meta) {
     const deposit  	= typeof attachedDeposit =='string'?attachedDeposit:nearApi.utils.format.parseNearAmount(''+attachedDeposit)
@@ -17,10 +15,11 @@ async function signURL (user, contract, method, args={}, depositAddresses = [], 
     let nonce = 1;
     for (const {depositContract, depositAddress} of depositAddresses) {
         if (await needToDeposit(depositContract, depositAddress)) {
+            const depositAmount = await getDepostiAmount(depositContract);
             const depositActions = [nearApi.transactions.functionCall('storage_deposit', Buffer.from(JSON.stringify({
                 registration_only: true,
                 account_id: depositAddress
-            })), gas, FT_STORAGE_DEPOSIT)];
+            })), gas, depositAmount)];
             txs.push(nearApi.transactions.createTransaction(user.accountId, user.key, depositContract, nonce++, depositActions, nearApi.utils.serialize.base_decode(block.header.hash)))
         }
     }
@@ -129,6 +128,11 @@ async function pairToString(pair) {
 async function needToDeposit(contract, account) {
     const balance = await contractQuery(contract, 'storage_balance_of', {account_id: account});
     return !balance;
+}
+
+async function getDepostiAmount(contract) {
+    const result = await contractQuery(contract, 'storage_balance_bounds', {});
+    return result.min;
 }
 
 const pairMap = {};
