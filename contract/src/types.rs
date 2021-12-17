@@ -1,18 +1,34 @@
 use near_sdk::{
     borsh,
     borsh::{BorshDeserialize, BorshSerialize},
-    json_types::U128,
+    json_types::{U128, U64},
     serde::{Deserialize, Serialize},
     AccountId,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+// #[derive(Serialize, Deserialize, Clone, PartialEq)]
+// #[serde(crate = "near_sdk::serde")]
+// pub enum OrderActions {
+//     // Cancel,
+//     Match,
+// }
+
+
+#[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
-pub enum OrderActions {
-    Cancel,
-    Match,
+#[serde(untagged)]
+pub enum TokenReceiverMessage {
+    Match {
+        order_id: U64,
+    },
+    NewOrderAction {
+        sell_token: AccountId,
+        sell_amount: U128,
+        buy_token: AccountId,
+        buy_amount: U128,
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -24,11 +40,17 @@ pub struct NewOrderAction {
     pub buy_amount: U128,
 }
 
+// #[derive(Serialize, Deserialize, Clone)]
+// #[serde(crate = "near_sdk::serde")]
+// pub struct OrderAction {
+//     pub order_id: U64,
+//     pub order_action: OrderActions,
+// }
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
-pub struct OrderAction {
-    pub order_id: U128,
-    pub order_action: OrderActions,
+pub struct OrderView {
+    pub order: Order,
+    pub order_id: U64,
 }
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug)]
