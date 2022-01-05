@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use near_sdk::{
     borsh,
     borsh::{BorshDeserialize, BorshSerialize},
@@ -74,6 +75,10 @@ impl Hash for Order {
 }
 
 impl Order {
+    pub fn get_price_for_key(&self) -> u128 {
+        (self.sell_amount.0 + 1000000000000000000000000000000) / self.buy_amount.0
+    }
+
     pub fn get_id(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
@@ -89,5 +94,38 @@ impl Order {
             buy_token: action.buy_token,
             buy_amount: action.buy_amount,
         }
+    }
+}
+
+
+#[derive(Ord, PartialEq, Clone, Copy, BorshSerialize, BorshDeserialize)]
+pub struct OrderKey(u128, pub u64);
+
+impl OrderKey {
+    pub fn from_order(order: &Order) -> Self {
+        let mut hasher = DefaultHasher::new();
+        order.hash(&mut hasher);
+
+        Self(order.get_price_for_key(), hasher.finish())
+    }
+
+    pub fn new_search_key(hash: u64) -> Self {
+        OrderKey(0, hash)
+    }
+}
+
+impl Eq for OrderKey {}
+
+impl PartialOrd for OrderKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let ord = if self.0 > other.0 {
+            Ordering::Greater
+        } else if self.0 < other.0 {
+            Ordering::Less
+        } else {
+            Ordering::Equal
+        };
+
+        Some(ord)
     }
 }
