@@ -36,7 +36,7 @@ pub enum StorageKey {
 #[derive(PanicOnDefault, BorshSerialize, BorshDeserialize)]
 pub struct Market {
     version: u8,
-    orders: UnorderedMap<String, TreeMap<u64, Order>>,
+    orders: UnorderedMap<String, TreeMap<OrderKey, Order>>,
     order_id_to_order: LookupMap<u64, Order>,
 }
 
@@ -203,11 +203,11 @@ impl Market {
             .unwrap_or(TreeMap::new(key.as_bytes()));
 
         let order_id = new_order.get_id();
-        if orders_map.contains_key(&order_id) {
+        if orders_map.contains_key(&OrderKey::new_search_key(order_id)) {
             env::panic_str(ERR02_ORDER_ALREADY_EXISTS);
         }
 
-        orders_map.insert(&order_id, &new_order);
+        orders_map.insert(&OrderKey::from_order(&new_order), &new_order);
 
         self.order_id_to_order.insert(&order_id, &new_order);
         self.orders.insert(&key, &orders_map);
@@ -222,7 +222,7 @@ impl Market {
         }
 
         let orders_map = order_by_key.unwrap();
-        let order = orders_map.get(&order_id.0);
+        let order = orders_map.get(&OrderKey::new_search_key(order_id.0));
 
         if order.is_none() {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
@@ -249,10 +249,11 @@ impl Market {
     fn internal_remove_order(
         &mut self,
         key: &String,
-        mut orders_map: TreeMap<u64, Order>,
+        mut orders_map: TreeMap<OrderKey, Order>,
         order_id: u64,
     ) {
-        orders_map.remove(&order_id);
+        let order_key = OrderKey::new_search_key(order_id);
+        orders_map.remove(&order_key);
 
         if orders_map.len() == 0 {
             self.orders.remove(key);
@@ -282,12 +283,12 @@ impl Market {
         let mut res = vec![];
 
         let orders = order_by_key.unwrap();
-        println!("orders.contains_key: {}", orders.contains_key(&6459152053938679878));
+        // println!("orders.contains_key: {}", orders.contains_key(&6459152053938679878));
         let order_iter = orders.iter().take(5);
         for order in order_iter {
             res.push(OrderView {
                 order: order.1.clone(),
-                order_id: U64(order.0),
+                order_id: U64(order.0.1),
             })
         }
 
@@ -313,6 +314,16 @@ mod tests {
 
     use super::*;
 
+    fn create_test_order(sell_amount: u128, buy_amount: u128) -> Order {
+        Order {
+            maker: AccountId::new_unchecked(String::from("maker.near")),
+            sell_token: AccountId::new_unchecked(String::from("xabr.allbridge.testnet")),
+            sell_amount: U128(sell_amount),
+            buy_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
+            buy_amount: U128(buy_amount),
+        }
+    }
+
     #[test]
     fn test_fee() {
         let contract = Market {
@@ -329,21 +340,8 @@ mod tests {
 
     #[test]
     fn test_order_hash() {
-        let order = Order {
-            maker: AccountId::new_unchecked(String::from("maker.near")),
-            sell_token: AccountId::new_unchecked(String::from("xabr.allbridge.testnet")),
-            sell_amount: U128(1000000000000000000000000),
-            buy_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
-            buy_amount: U128(1000000000000000000000000),
-        };
-
-        let order1 = Order {
-            maker: AccountId::new_unchecked(String::from("maker.near")),
-            sell_token: AccountId::new_unchecked(String::from("xabr.allbridge.testnet")),
-            sell_amount: U128(1000000000000000000000000),
-            buy_token: AccountId::new_unchecked(String::from("abr.allbridge.testnet")),
-            buy_amount: U128(1000000000000000000000000),
-        };
+        let order = create_test_order(1000000000000000000000000, 1000000000000000000000000);
+        let order1 = create_test_order(1000000000000000000000000, 1000000000000000000000000);
 
         assert_eq!(order.get_id(), order1.get_id());
 
@@ -460,5 +458,79 @@ mod tests {
 
         assert!(contract.get_pairs().len() == 0);
         assert!(contract.get_order(U64(order_id_1)).is_none());
+    }
+
+    #[test]
+    fn test_orders_ordered_by_price() {
+        let mut contract = Market {
+            orders: UnorderedMap::new(StorageKey::Orders),
+            order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
+            version: 1,
+        };
+        let mut builder = VMContextBuilder::new();
+        testing_env!(builder
+            .storage_usage(env::storage_usage())
+            .attached_deposit(0)
+            .predecessor_account_id(AccountId::new_unchecked(String::from("aromankov.testnet")))
+            .build());
+
+        let account1: AccountId = "xabr.allbridge.testnet".parse().unwrap();
+        let account2: AccountId = "abr.allbridge.testnet".parse().unwrap();
+
+        let new_order_action_1 = NewOrderAction {
+            sell_token: account1.clone(),
+            sell_amount: U128(2),
+            buy_token: account2.clone(),
+            buy_amount: U128(1),
+        };
+
+        contract.add_order(
+            new_order_action_1.clone(),
+            AccountId::new_unchecked(String::from("aromankov.testnet")),
+        );
+
+        let new_order_action_2 = NewOrderAction {
+            sell_token: account1.clone(),
+            sell_amount: U128(1),
+            buy_token: account2.clone(),
+            buy_amount: U128(1),
+        };
+
+        contract.add_order(
+            new_order_action_2.clone(),
+            AccountId::new_unchecked(String::from("aromankov.testnet")),
+        );
+
+        let new_order_action_2 = NewOrderAction {
+            sell_token: account1.clone(),
+            sell_amount: U128(1),
+            buy_token: account2.clone(),
+            buy_amount: U128(2),
+        };
+
+
+        let new_order_action_3 = NewOrderAction {
+            sell_token: account1.clone(),
+            sell_amount: U128(1),
+            buy_token: account2.clone(),
+            buy_amount: U128(1),
+        };
+
+        contract.add_order(
+            new_order_action_2.clone(),
+            AccountId::new_unchecked(String::from("aromankov.testnet")),
+        );
+
+        let orders = contract
+            .get_orders(account1, account2)
+            .unwrap()
+            .into_iter()
+            .map(|i| i.order.get_price_for_key())
+            .collect::<Vec<_>>();
+
+        println!("{:#?}", orders);
+
+        assert!(orders[0] < orders[1]);
+        assert!(orders[1] < orders[2]);
     }
 }
