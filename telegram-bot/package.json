@@ -2,11 +2,15 @@
   "name": "telegram-bot",
   "version": "1.0.0",
   "dependencies": {
-    "bn.js": "^5.2.0",
+    "axios": "^0.24.0",
     "big.js": "^6.1.1",
+    "bn.js": "^5.2.0",
+    "convert-svg-to-png": "^0.5.0",
     "dotenv": "^10.0.0",
     "near-api-js": "^0.44.1",
-    "node-telegram-bot-api": "^0.56.0"
+    "node-telegram-bot-api": "^0.56.0",
+    "svg2img": "^0.9.4",
+    "text-to-svg": "^3.1.5"
   },
   "scripts": {
     "start": "node index.js"
