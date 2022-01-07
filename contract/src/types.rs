@@ -7,6 +7,7 @@ use near_sdk::{
     AccountId,
 };
 use std::collections::hash_map::DefaultHasher;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 // #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -22,7 +23,7 @@ use std::hash::{Hash, Hasher};
 #[serde(untagged)]
 pub enum TokenReceiverMessage {
     Match {
-        order_id: U64,
+        order_id: OrderId,
     },
     NewOrderAction {
         sell_token: AccountId,
@@ -41,17 +42,11 @@ pub struct NewOrderAction {
     pub buy_amount: U128,
 }
 
-// #[derive(Serialize, Deserialize, Clone)]
-// #[serde(crate = "near_sdk::serde")]
-// pub struct OrderAction {
-//     pub order_id: U64,
-//     pub order_action: OrderActions,
-// }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct OrderView {
     pub order: Order,
-    pub order_id: U64,
+    pub order_id: OrderId,
 }
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq)]
@@ -79,11 +74,12 @@ impl Order {
         (self.sell_amount.0 + 1000000000000000000000000000000) / self.buy_amount.0
     }
 
-    pub fn get_id(&self) -> u64 {
+    pub fn get_id(&self) -> OrderId {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         let hash = hasher.finish();
-        hash
+
+        OrderId(self.get_price_for_key(), hash)
     }
 
     pub fn from_action(action: NewOrderAction, sender: AccountId) -> Self {
@@ -98,34 +94,29 @@ impl Order {
 }
 
 
-#[derive(Ord, PartialEq, Clone, Copy, BorshSerialize, BorshDeserialize)]
-pub struct OrderKey(u128, pub u64);
+#[derive(Debug, Ord, PartialEq, Clone, Copy, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct OrderId(pub u128, pub u64);
 
-impl OrderKey {
+impl OrderId {
     pub fn from_order(order: &Order) -> Self {
         let mut hasher = DefaultHasher::new();
         order.hash(&mut hasher);
 
         Self(order.get_price_for_key(), hasher.finish())
     }
+}
 
-    pub fn new_search_key(hash: u64) -> Self {
-        OrderKey(0, hash)
+impl Eq for OrderId {}
+
+impl PartialOrd for OrderId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 
-impl Eq for OrderKey {}
-
-impl PartialOrd for OrderKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let ord = if self.0 > other.0 {
-            Ordering::Greater
-        } else if self.0 < other.0 {
-            Ordering::Less
-        } else {
-            Ordering::Equal
-        };
-
-        Some(ord)
+impl Display for OrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.0, self.1)
     }
 }

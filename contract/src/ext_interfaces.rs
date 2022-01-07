@@ -1,5 +1,6 @@
 use near_sdk::ext_contract;
 use near_sdk::json_types::{U128, U64};
+use crate::OrderId;
 
 #[ext_contract(ft_token)]
 pub trait FtToken {
@@ -21,6 +22,6 @@ pub trait ExtSelf {
         sell_amount: U128,
         sell_token: AccountId,
         buy_token: AccountId,
-        order_id: U64,
+        order_id: OrderId,
     );
 }
