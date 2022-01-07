@@ -9,6 +9,7 @@ use near_sdk::{
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 
 // #[derive(Serialize, Deserialize, Clone, PartialEq)]
 // #[serde(crate = "near_sdk::serde")]
