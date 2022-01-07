@@ -1,4 +1,4 @@
-use near_sdk::ext_contract;
+use near_sdk::{AccountId, ext_contract};
 use near_sdk::json_types::{U128, U64};
 use crate::OrderId;
 
@@ -23,5 +23,12 @@ pub trait ExtSelf {
         sell_token: AccountId,
         buy_token: AccountId,
         order_id: OrderId,
+    );
+
+    fn callback_after_deposit(
+        &self,
+        sell_token: AccountId,
+        buy_token: AccountId,
+        order_id: OrderId
     );
 }

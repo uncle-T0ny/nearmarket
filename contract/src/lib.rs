@@ -172,27 +172,58 @@ impl Market {
         };
 
         if is_promise_success {
+            let gas_for_next_callback =
+                env::prepaid_gas() - env::used_gas() - FT_TRANSFER_TGAS - RESERVE_TGAS;
+
             // check storage deposit
             ft_token::ft_transfer(
-                // todo add callback and check that tokens transfered before removing
                 sender_id,
                 sell_amount,
                 "".to_string(),
                 sell_token.clone(),
                 ONE_YOCTO,
                 FT_TRANSFER_TGAS,
-            ); // todo, we need to check result, but what to do in case of fail? 
+            ).then(ext_self::callback_after_deposit(
+                sell_token,
+                buy_token,
+                order_id,
+                env::current_account_id(),
+                0,
+                gas_for_next_callback
+            ));
 
-            let key = compose_key(&sell_token, &buy_token);
-            let orders_map = self
-                .orders
-                .get(&key)
-                .unwrap_or_else(|| env::panic_str(ERR01_INTERNAL));
-            self.internal_remove_order(&key, orders_map, order_id);
         } else {
             // for example maker did not registred buy_token
             env::panic_str(ERR01_INTERNAL);
-        } 
+        }
+    }
+
+    #[private]
+    pub fn callback_after_deposit(
+        &mut self,
+        sell_token: AccountId,
+        buy_token: AccountId,
+        order_id: OrderId
+    ) {
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "{}",
+            ERR08_NOT_CORRECT_PROMISE_RESULT_COUNT
+        );
+
+        if let PromiseResult::Failed = env::promise_result(0) {
+            // TODO: Should we just panic here?
+            //       Maybe we should rollback previous actions somehow?
+            env::panic_str(ERR09_DEPOSIT_FAILED);
+        }
+
+        let key = compose_key(&sell_token, &buy_token);
+        let orders_map = self
+            .orders
+            .get(&key)
+            .unwrap_or_else(|| env::panic_str(ERR01_INTERNAL));
+        self.internal_remove_order(&key, orders_map, order_id);
     }
 
     fn add_order(&mut self, action: NewOrderAction, sender: AccountId) {
@@ -526,8 +557,6 @@ mod tests {
             .into_iter()
             .map(|i| i.order.get_price_for_key())
             .collect::<Vec<_>>();
-
-        println!("{:#?}", orders);
 
         assert!(orders[0] < orders[1]);
         assert!(orders[1] < orders[2]);
