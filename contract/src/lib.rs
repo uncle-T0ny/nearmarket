@@ -36,8 +36,8 @@ pub enum StorageKey {
 #[derive(PanicOnDefault, BorshSerialize, BorshDeserialize)]
 pub struct Market {
     version: u8,
-    orders: UnorderedMap<String, TreeMap<OrderKey, Order>>,
-    order_id_to_order: LookupMap<u64, Order>,
+    orders: UnorderedMap<String, TreeMap<OrderId, Order>>,
+    order_id_to_order: LookupMap<OrderId, Order>,
 }
 
 #[near_bindgen]
@@ -81,7 +81,7 @@ impl FungibleTokenReceiver for Market {
                 TokenReceiverMessage::Match { order_id } => {
                     env::log_str("its order match ");
 
-                    self.match_order(sender_id, order_id.0, amount, token);
+                    self.match_order(sender_id, order_id, amount, token);
                     return PromiseOrValue::Value(U128(0));
                 }
             }
@@ -101,7 +101,7 @@ impl Market {
         this
     }
 
-    fn match_order(&mut self, sender_id: AccountId, order_id: u64, amount: U128, token: AccountId) {
+    fn match_order(&mut self, sender_id: AccountId, order_id: OrderId, amount: U128, token: AccountId) {
         env::log_str(&format!(
             "match_order: {}, {:?}, {}",
             order_id, amount, token
@@ -139,7 +139,7 @@ impl Market {
             self.take_one_percent_fee(order.sell_amount.0),
             order.sell_token.clone(),
             order.buy_token.clone(),
-            U64(order_id),
+            order_id,
             env::current_account_id(),
             0,
             gas_for_next_callback,
@@ -157,7 +157,7 @@ impl Market {
         sell_amount: U128,
         sell_token: AccountId,
         buy_token: AccountId,
-        order_id: U64,
+        order_id: OrderId,
     ) {
         assert_eq!(
             env::promise_results_count(),
@@ -188,7 +188,7 @@ impl Market {
                 .orders
                 .get(&key)
                 .unwrap_or_else(|| env::panic_str(ERR01_INTERNAL));
-            self.internal_remove_order(&key, orders_map, order_id.0);
+            self.internal_remove_order(&key, orders_map, order_id);
         } else {
             // for example maker did not registred buy_token
             env::panic_str(ERR01_INTERNAL);
@@ -203,17 +203,17 @@ impl Market {
             .unwrap_or(TreeMap::new(key.as_bytes()));
 
         let order_id = new_order.get_id();
-        if orders_map.contains_key(&OrderKey::new_search_key(order_id)) {
+        if orders_map.contains_key(&order_id) {
             env::panic_str(ERR02_ORDER_ALREADY_EXISTS);
         }
 
-        orders_map.insert(&OrderKey::from_order(&new_order), &new_order);
+        orders_map.insert(&OrderId::from_order(&new_order), &new_order);
 
         self.order_id_to_order.insert(&order_id, &new_order);
         self.orders.insert(&key, &orders_map);
     }
 
-    pub fn remove_order(&mut self, sell_token: AccountId, buy_token: AccountId, order_id: U64) {
+    pub fn remove_order(&mut self, sell_token: AccountId, buy_token: AccountId, order_id: OrderId) {
         let key = compose_key(&sell_token, &buy_token);
         let order_by_key = self.orders.get(&key);
 
@@ -222,7 +222,7 @@ impl Market {
         }
 
         let orders_map = order_by_key.unwrap();
-        let order = orders_map.get(&OrderKey::new_search_key(order_id.0));
+        let order = orders_map.get(&order_id);
 
         if order.is_none() {
             env::panic_str(ERR03_ORDER_NOT_FOUND);
@@ -234,7 +234,7 @@ impl Market {
             env::panic_str(ERR04_PERMISSION_DENIED)
         }
 
-        self.internal_remove_order(&key, orders_map, order_id.0);
+        self.internal_remove_order(&key, orders_map, order_id);
 
         ft_token::ft_transfer(
             maker,
@@ -249,11 +249,10 @@ impl Market {
     fn internal_remove_order(
         &mut self,
         key: &String,
-        mut orders_map: TreeMap<OrderKey, Order>,
-        order_id: u64,
+        mut orders_map: TreeMap<OrderId, Order>,
+        order_id: OrderId,
     ) {
-        let order_key = OrderKey::new_search_key(order_id);
-        orders_map.remove(&order_key);
+        orders_map.remove(&order_id);
 
         if orders_map.len() == 0 {
             self.orders.remove(key);
@@ -264,8 +263,8 @@ impl Market {
         self.order_id_to_order.remove(&order_id);
     }
 
-    pub fn get_order(&self, order_id: U64) -> Option<Order> {
-        self.order_id_to_order.get(&order_id.0)
+    pub fn get_order(&self, order_id: OrderId) -> Option<Order> {
+        self.order_id_to_order.get(&order_id)
     }
 
     pub fn get_orders(
@@ -288,7 +287,7 @@ impl Market {
         for order in order_iter {
             res.push(OrderView {
                 order: order.1.clone(),
-                order_id: U64(order.0.1),
+                order_id: order.0.clone(),
             })
         }
 
@@ -415,7 +414,7 @@ mod tests {
         assert!(orders_2.len() == 1);
 
         let order_2 = orders_2.get(0).unwrap();
-        let order_id_2 = order_2.order_id.0;
+        let order_id_2 = order_2.order_id;
         assert_eq!(*order_2, OrderView{
             order: Order {
                 buy_amount: new_order_action_2.buy_amount.clone(),
@@ -424,11 +423,11 @@ mod tests {
                 sell_token: new_order_action_2.sell_token.clone(),
                 maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
             },
-            order_id: U64(order_id_2)
+            order_id: order_id_2
         });
 
         let order_1 = orders_1.get(0).unwrap();
-        let order_id_1 = order_1.order_id.0;
+        let order_id_1 = order_1.order_id;
 
         assert_eq!(*order_1, OrderView {
             order: Order {
@@ -438,26 +437,26 @@ mod tests {
                 sell_token: new_order_action_1.sell_token.clone(),
                 maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
             },
-            order_id: U64(order_id_1)
+            order_id: order_id_1
         });
 
         // check remove order
-        assert!(contract.get_order(U64(order_id_1)).is_some());
+        assert!(contract.get_order(order_id_1).is_some());
 
         contract.remove_order(
             new_order_action_1.sell_token.clone(),
             new_order_action_1.buy_token.clone(),
-            U64(order_id_1),
+            order_id_1,
         );
 
         contract.remove_order(
             new_order_action_2.sell_token.clone(),
             new_order_action_2.buy_token.clone(),
-            U64(order_id_2),
+            order_id_2,
         );
 
         assert!(contract.get_pairs().len() == 0);
-        assert!(contract.get_order(U64(order_id_1)).is_none());
+        assert!(contract.get_order(order_id_1).is_none());
     }
 
     #[test]
