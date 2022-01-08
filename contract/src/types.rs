@@ -121,3 +121,15 @@ impl Display for OrderId {
         write!(f, "{}{}", self.0, self.1)
     }
 }
+
+#[derive(Copy, Clone, BorshSerialize, BorshDeserialize)]
+pub struct Fee {
+    pub percent: u16,
+    pub earned: u128,
+}
+
+impl Fee {
+    pub fn new(percent: u16, earned: u128) -> Self {
+        Self { percent, earned }
+    }
+}
