@@ -7,3 +7,4 @@ pub const ERR06_NOT_VALID_TOKEN: &str = "E06: not valid token";
 pub const ERR07_WRONG_MSG_FORMAT: &str = "E07: wrong msg format";
 pub const ERR08_NOT_CORRECT_PROMISE_RESULT_COUNT: &str = "E08: not correct promise result count";
 pub const ERR09_DEPOSIT_FAILED: &str = "E09: deposit failed";
+pub const ERR10_NOT_ENOUGH: &str = "E10: not enough FT";

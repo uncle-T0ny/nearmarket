@@ -191,6 +191,74 @@ impl Market {
 
         self.fees.insert(&token, &Fee::new(percent, earned));
     }
+
+    pub fn transfer_earned_fees(
+        &mut self,
+        token: AccountId,
+        amount: u128,
+        receiver: AccountId
+    ) {
+        assert_owner();
+
+        let fee_info = self.fees.get(&token).expect(ERR10_NOT_ENOUGH);
+
+        if fee_info.earned == 0 {
+            env::panic_str("no need to transfer zero amount");
+        }
+
+        if amount > fee_info.earned {
+            env::panic_str(ERR10_NOT_ENOUGH);
+        }
+
+        let gas_for_next_callback =
+            env::prepaid_gas() - env::used_gas() - FT_TRANSFER_TGAS - RESERVE_TGAS;
+
+        ft_token::ft_transfer(
+            receiver.clone(),
+            U128(amount),
+            "transfer from contract".to_string(),
+            token.clone(),
+            ONE_YOCTO,
+            FT_TRANSFER_TGAS
+        ).then(ext_self::callback_on_send_tokens_to_ext_account(
+            token,
+            receiver,
+            U128(amount),
+            env::current_account_id(),
+            0,
+            gas_for_next_callback
+        ));
+    }
+
+    #[private]
+    fn callback_on_send_tokens_to_ext_account(
+        &mut self, token: AccountId, receiver: AccountId, amount: U128
+    ) {
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "{}",
+            ERR08_NOT_CORRECT_PROMISE_RESULT_COUNT
+        );
+
+        match env::promise_result(0) {
+            PromiseResult::Failed => {
+                env::log_str("failed to transfer tokens to receiver")
+            },
+            PromiseResult::Successful(_) => {
+                env::log_str("tokens successfully transferred to receiver");
+
+                let mut fee_info = match self.fees.get(&token) {
+                    Some(v) => v,
+                    None => env::panic_str("failed to get fee info for token")
+                };
+
+                fee_info.earned = fee_info.earned.saturating_sub(amount.0);
+                self.fees.insert(&token, &fee_info);
+            }
+            _ => unreachable!()
+        }
+    }
     
     #[private]
     pub fn callback_on_send_tokens_to_maker(

@@ -32,4 +32,8 @@ pub trait ExtSelf {
         buy_token: AccountId,
         order_id: OrderId
     );
+
+    fn callback_on_send_tokens_to_ext_account(
+        &self, token: AccountId, receiver: AccountId, amount: U128
+    );
 }
