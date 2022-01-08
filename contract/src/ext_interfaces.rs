@@ -27,6 +27,7 @@ pub trait ExtSelf {
 
     fn callback_after_deposit(
         &self,
+        fee: U128,
         sell_token: AccountId,
         buy_token: AccountId,
         order_id: OrderId
