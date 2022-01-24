@@ -2,7 +2,7 @@ use crate::market::constants::*;
 use crate::market::ext_interface::ext_self;
 use crate::market::fees::Fee;
 use crate::market::helpers::assert_owner;
-use crate::market::helpers::{ft_transfer, get_next_gas};
+use crate::market::helpers::get_next_gas;
 use crate::market::order::{NewOrderAction, Order};
 use crate::market::order_id::OrderId;
 use crate::market::storage::StorageKey;
@@ -29,6 +29,7 @@ pub struct Market {
     fees: LookupMap<AccountId, Fee>,
 }
 
+#[allow(dead_code)]
 #[near_bindgen]
 impl Market {
     #[init]
@@ -48,7 +49,12 @@ impl Market {
         self.internal_set_fee(token, percent)
     }
 
-    pub fn remove_order(&mut self, sell_token: AccountId, buy_token: AccountId, order_id: OrderId) -> Promise {
+    pub fn remove_order(
+        &mut self,
+        sell_token: AccountId,
+        buy_token: AccountId,
+        order_id: OrderId,
+    ) -> Promise {
         let key = helpers::compose_key(&sell_token, &buy_token);
         let order_by_key = self.orders.get(&key);
 
@@ -62,8 +68,13 @@ impl Market {
         );
 
         self.remove_order_from_tree(&key, &order_id, &mut orders_map);
-        
-        helpers::ft_transfer(&maker, order.sell_amount.into(), "".to_string(), &order.sell_token)
+
+        helpers::ft_transfer(
+            &maker,
+            order.sell_amount.into(),
+            "".to_string(),
+            &order.sell_token,
+        )
     }
 }
 
@@ -161,13 +172,13 @@ impl Market {
         buy_token: &AccountId,
         order_id: &OrderId,
     ) {
-        let key = helpers::compose_key(&sell_token, &buy_token);
+        let key = helpers::compose_key(sell_token, buy_token);
         let mut orders_map = self
             .orders
             .get(&key)
             .unwrap_or_else(|| env::panic_str(ERR01_INTERNAL));
 
-        self.remove_order_from_tree(&key, &order_id, &mut orders_map);
+        self.remove_order_from_tree(&key, order_id, &mut orders_map);
     }
 
     pub(crate) fn remove_order_from_tree(

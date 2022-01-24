@@ -1,9 +1,9 @@
 use crate::market::constants::HUNDRED_PERCENT;
 use crate::market::*;
+use near_sdk::borsh;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
-use near_sdk::{borsh, *};
 
 #[derive(Copy, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Fee {
@@ -54,6 +54,7 @@ impl Market {
     }
 }
 
+#[allow(dead_code)]
 #[near_bindgen]
 impl Market {
     pub fn transfer_earned_fees(
@@ -76,7 +77,6 @@ impl Market {
         )
         .then(ext_self::callback_on_send_tokens_to_ext_account(
             token,
-            receiver,
             amount.into(),
             env::current_account_id(),
             0,

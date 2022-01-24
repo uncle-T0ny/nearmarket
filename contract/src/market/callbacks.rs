@@ -2,6 +2,7 @@ use crate::market::constants::*;
 use crate::market::*;
 use near_sdk::json_types::U128;
 
+#[allow(dead_code)]
 #[near_bindgen]
 impl Market {
     #[private]
@@ -75,7 +76,6 @@ impl Market {
             self.on_success_deposit(fee.0, &sell_token);
         }
 
-        let key = helpers::compose_key(&sell_token, &buy_token);
         self.internal_remove_order(&sell_token, &buy_token, &order_id);
     }
 }

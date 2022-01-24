@@ -15,16 +15,14 @@ pub struct NewOrderAction {
     pub buy_amount: U128,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub struct OrderView {
     pub order: Order,
     pub order_id: OrderId,
 }
 
-#[derive(
-    Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Hash,
-)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Order {
     pub maker: AccountId,
@@ -32,6 +30,16 @@ pub struct Order {
     pub sell_amount: U128,
     pub buy_token: AccountId,
     pub buy_amount: U128,
+}
+
+impl Hash for Order {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.maker.hash(state);
+        self.sell_token.hash(state);
+        self.sell_amount.0.hash(state);
+        self.buy_token.hash(state);
+        self.buy_amount.0.hash(state);
+    }
 }
 
 impl Order {
@@ -45,15 +53,5 @@ impl Order {
         let hash = hasher.finish();
 
         OrderId(self.get_price_for_key(), hash)
-    }
-
-    pub fn from_action(action: NewOrderAction, sender: AccountId) -> Self {
-        Order {
-            maker: sender,
-            sell_token: action.sell_token,
-            sell_amount: action.sell_amount,
-            buy_token: action.buy_token,
-            buy_amount: action.buy_amount,
-        }
     }
 }
