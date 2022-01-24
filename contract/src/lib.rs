@@ -1,6 +1,5 @@
-use crate::ext_interfaces::*;
-use crate::types::*;
 use crate::helpers::*;
+use crate::types::*;
 use errors::*;
 
 use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
@@ -18,9 +17,10 @@ use near_sdk::PromiseResult;
 use near_sdk::{env, AccountId, PromiseOrValue};
 
 mod errors;
-mod ext_interfaces;
-mod types;
 mod helpers;
+mod market;
+mod orders;
+mod types;
 
 pub const ONE_YOCTO: u128 = 1;
 pub const HUNDRED_PERCENT: u16 = 10000;
@@ -33,7 +33,7 @@ pub enum StorageKey {
     MapByOrderId,
     Orders,
     OrderIdToOrder,
-    FeesByAccountIds
+    FeesByAccountIds,
 }
 
 #[near_bindgen]
@@ -42,7 +42,7 @@ pub struct Market {
     version: u8,
     orders: UnorderedMap<String, TreeMap<OrderId, Order>>,
     order_id_to_order: LookupMap<OrderId, Order>,
-    fees: LookupMap<AccountId, Fee>
+    fees: LookupMap<AccountId, Fee>,
 }
 
 #[near_bindgen]
@@ -102,12 +102,18 @@ impl Market {
             version,
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
         this
     }
 
-    fn match_order(&mut self, sender_id: AccountId, order_id: OrderId, amount: U128, token: AccountId) {
+    fn match_order(
+        &mut self,
+        sender_id: AccountId,
+        order_id: OrderId,
+        amount: U128,
+        token: AccountId,
+    ) {
         env::log_str(&format!(
             "match_order: {}, {:?}, {}",
             order_id, amount, token
@@ -126,8 +132,6 @@ impl Market {
         if token != order.buy_token {
             env::panic_str(ERR06_NOT_VALID_TOKEN);
         }
-
-        // todo:  check storage deposit
 
         let gas_for_next_callback =
             env::prepaid_gas() - env::used_gas() - FT_TRANSFER_TGAS - RESERVE_TGAS;
@@ -160,7 +164,7 @@ impl Market {
                     // 1 / 100 = 0.01%
                     // 100% = HUNDRED_PERCENT = 10000
                     percent: 100,
-                    earned: 0
+                    earned: 0,
                 };
 
                 self.fees.insert(sell_token, &fee);
@@ -169,11 +173,7 @@ impl Market {
         }
     }
 
-    fn take_fee(
-        &mut self,
-        amount: u128,
-        sell_token: &AccountId
-    ) -> u128 {
+    fn take_fee(&mut self, amount: u128, sell_token: &AccountId) -> u128 {
         let fee_value = self.get_or_create_fee_info(sell_token).percent;
         let fee = amount * ((HUNDRED_PERCENT - fee_value) as u128) / (HUNDRED_PERCENT as u128);
         fee
@@ -186,18 +186,13 @@ impl Market {
 
         let earned = match self.fees.get(&token) {
             Some(v) => v.earned,
-            None => 0
+            None => 0,
         };
 
         self.fees.insert(&token, &Fee::new(percent, earned));
     }
 
-    pub fn transfer_earned_fees(
-        &mut self,
-        token: AccountId,
-        amount: u128,
-        receiver: AccountId
-    ) {
+    pub fn transfer_earned_fees(&mut self, token: AccountId, amount: u128, receiver: AccountId) {
         assert_owner();
 
         let fee_info = self.fees.get(&token).expect(ERR10_NOT_ENOUGH);
@@ -219,20 +214,24 @@ impl Market {
             "transfer from contract".to_string(),
             token.clone(),
             ONE_YOCTO,
-            FT_TRANSFER_TGAS
-        ).then(ext_self::callback_on_send_tokens_to_ext_account(
+            FT_TRANSFER_TGAS,
+        )
+        .then(ext_self::callback_on_send_tokens_to_ext_account(
             token,
             receiver,
             U128(amount),
             env::current_account_id(),
             0,
-            gas_for_next_callback
+            gas_for_next_callback,
         ));
     }
 
     #[private]
     fn callback_on_send_tokens_to_ext_account(
-        &mut self, token: AccountId, receiver: AccountId, amount: U128
+        &mut self,
+        token: AccountId,
+        receiver: AccountId,
+        amount: U128,
     ) {
         assert_eq!(
             env::promise_results_count(),
@@ -242,24 +241,22 @@ impl Market {
         );
 
         match env::promise_result(0) {
-            PromiseResult::Failed => {
-                env::log_str("failed to transfer tokens to receiver")
-            },
+            PromiseResult::Failed => env::log_str("failed to transfer tokens to receiver"),
             PromiseResult::Successful(_) => {
                 env::log_str("tokens successfully transferred to receiver");
 
                 let mut fee_info = match self.fees.get(&token) {
                     Some(v) => v,
-                    None => env::panic_str("failed to get fee info for token")
+                    None => env::panic_str("failed to get fee info for token"),
                 };
 
                 fee_info.earned = fee_info.earned.saturating_sub(amount.0);
                 self.fees.insert(&token, &fee_info);
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
-    
+
     #[private]
     pub fn callback_on_send_tokens_to_maker(
         &mut self,
@@ -295,16 +292,16 @@ impl Market {
                 sell_token.clone(),
                 ONE_YOCTO,
                 FT_TRANSFER_TGAS,
-            ).then(ext_self::callback_after_deposit(
+            )
+            .then(ext_self::callback_after_deposit(
                 U128(fee),
                 sell_token,
                 buy_token,
                 order_id,
                 env::current_account_id(),
                 0,
-                gas_for_next_callback
+                gas_for_next_callback,
             ));
-
         } else {
             // for example maker did not registred buy_token
             env::panic_str(ERR01_INTERNAL);
@@ -317,7 +314,7 @@ impl Market {
         fee: U128,
         sell_token: AccountId,
         buy_token: AccountId,
-        order_id: OrderId
+        order_id: OrderId,
     ) {
         assert_eq!(
             env::promise_results_count(),
@@ -348,7 +345,9 @@ impl Market {
         let new_order = Order::from_action(action, sender);
 
         let key = compose_key(&new_order.sell_token, &new_order.buy_token);
-        let mut orders_map = self.orders.get(&key)
+        let mut orders_map = self
+            .orders
+            .get(&key)
             .unwrap_or(TreeMap::new(key.as_bytes()));
 
         let order_id = new_order.get_id();
@@ -473,10 +472,7 @@ mod tests {
     }
 
     fn fee_test(contract: &mut Market, token: &str, amount: u128, expect: u128) {
-        assert_eq!(
-            contract.take_fee(amount, &(token.parse().unwrap())),
-            expect
-        );
+        assert_eq!(contract.take_fee(amount, &(token.parse().unwrap())), expect);
     }
 
     #[test]
@@ -486,10 +482,10 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
 
-        contract.set_fee("sometoken.near".parse().unwrap(), HUNDRED_PERCENT+1)
+        contract.set_fee("sometoken.near".parse().unwrap(), HUNDRED_PERCENT + 1)
     }
 
     #[test]
@@ -499,7 +495,7 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
 
         contract.set_fee("sometoken.near".parse().unwrap(), 0)
@@ -511,7 +507,7 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
 
         let mut builder = VMContextBuilder::new();
@@ -525,14 +521,24 @@ mod tests {
         fee_test(&mut contract, "sometoken.near", 100, 99);
         fee_test(&mut contract, "sometoken.near", 23200, 22968);
         fee_test(&mut contract, "sometoken.near", 1111111, 1099999);
-        fee_test(&mut contract, "sometoken.near", 1000000000000000000000000000, 990000000000000000000000000);
+        fee_test(
+            &mut contract,
+            "sometoken.near",
+            1000000000000000000000000000,
+            990000000000000000000000000,
+        );
 
         contract.set_fee("sometoken2.near".parse().unwrap(), 500);
 
         fee_test(&mut contract, "sometoken2.near", 100, 95);
         fee_test(&mut contract, "sometoken2.near", 23200, 22040);
         fee_test(&mut contract, "sometoken2.near", 1111111, 1055555);
-        fee_test(&mut contract, "sometoken2.near", 1000000000000000000000000000, 950000000000000000000000000);
+        fee_test(
+            &mut contract,
+            "sometoken2.near",
+            1000000000000000000000000000,
+            950000000000000000000000000,
+        );
     }
 
     #[test]
@@ -542,7 +548,7 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
 
         let mut builder = VMContextBuilder::new();
@@ -578,7 +584,7 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
 
         let mut builder = VMContextBuilder::new();
@@ -634,30 +640,36 @@ mod tests {
 
         let order_2 = orders_2.get(0).unwrap();
         let order_id_2 = order_2.order_id;
-        assert_eq!(*order_2, OrderView{
-            order: Order {
-                buy_amount: new_order_action_2.buy_amount.clone(),
-                sell_amount: new_order_action_2.sell_amount.clone(),
-                buy_token: new_order_action_2.buy_token.clone(),
-                sell_token: new_order_action_2.sell_token.clone(),
-                maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
-            },
-            order_id: order_id_2
-        });
+        assert_eq!(
+            *order_2,
+            OrderView {
+                order: Order {
+                    buy_amount: new_order_action_2.buy_amount.clone(),
+                    sell_amount: new_order_action_2.sell_amount.clone(),
+                    buy_token: new_order_action_2.buy_token.clone(),
+                    sell_token: new_order_action_2.sell_token.clone(),
+                    maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
+                },
+                order_id: order_id_2
+            }
+        );
 
         let order_1 = orders_1.get(0).unwrap();
         let order_id_1 = order_1.order_id;
 
-        assert_eq!(*order_1, OrderView {
-            order: Order {
-                buy_amount: new_order_action_1.buy_amount.clone(),
-                sell_amount: new_order_action_1.sell_amount.clone(),
-                buy_token: new_order_action_1.buy_token.clone(),
-                sell_token: new_order_action_1.sell_token.clone(),
-                maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
-            },
-            order_id: order_id_1
-        });
+        assert_eq!(
+            *order_1,
+            OrderView {
+                order: Order {
+                    buy_amount: new_order_action_1.buy_amount.clone(),
+                    sell_amount: new_order_action_1.sell_amount.clone(),
+                    buy_token: new_order_action_1.buy_token.clone(),
+                    sell_token: new_order_action_1.sell_token.clone(),
+                    maker: AccountId::new_unchecked(String::from("aromankov.testnet"))
+                },
+                order_id: order_id_1
+            }
+        );
 
         // check remove order
         assert!(contract.get_order(order_id_1).is_some());
@@ -684,7 +696,7 @@ mod tests {
             orders: UnorderedMap::new(StorageKey::Orders),
             order_id_to_order: LookupMap::new(StorageKey::OrderIdToOrder),
             version: 1,
-            fees: LookupMap::new(StorageKey::FeesByAccountIds)
+            fees: LookupMap::new(StorageKey::FeesByAccountIds),
         };
         let mut builder = VMContextBuilder::new();
         testing_env!(builder
@@ -726,7 +738,6 @@ mod tests {
             buy_token: account2.clone(),
             buy_amount: U128(2),
         };
-
 
         let new_order_action_3 = NewOrderAction {
             sell_token: account1.clone(),
